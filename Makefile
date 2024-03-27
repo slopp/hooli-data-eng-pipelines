@@ -1,22 +1,21 @@
+locally: manifest
+	clear
+	dagster dev
 
 clean: 
 	rm -rf ~/.dagster_home; mkdir ~/.dagster_home; cp dagster.yaml ~/.dagster_home/dagster.yaml
 
-dagit: clean
-	export DAGSTER_HOME="~/.dagster_home"; dagit
+manifest:
+	dbt parse --project-dir=dbt_project --profiles-dir=dbt_project/config --target BRANCH
 
-daemon:
-	export DAGSTER_HOME="~/.dagster_home"; dagster-daemon run
-	
+deps:
+	dbt deps --project-dir=dbt_project --profiles-dir=dbt_project/config
 
-run: dagit daemon
+stateful_dev: clean manifest
+	export DAGSTER_HOME="~/.dagster_home"; dagster dev
 
-dagit_prod: clean 
-	export DAGSTER_HOME="~/.dagster_home"; export DAGSTER_CLOUD_DEPLOYMENT_NAME="data-eng-prod"; dagit
+stateful_dev_prod: clean manifest
+	export DAGSTER_HOME="~/.dagster_home"; export DAGSTER_CLOUD_DEPLOYMENT_NAME="data-eng-prod"; dagster dev
 
-daemon_prod: 
-	export DAGSTER_HOME="~/.dagster_home"; export DAGSTER_CLOUD_DEPLOYMENT_NAME="data-eng-prod"; dagster-daemon run
-	
-
-run_prod: dagit_prod daemon_prod
-
+dependencies:
+	uv pip install -e ".[dev]"

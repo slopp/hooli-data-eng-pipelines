@@ -1,5 +1,17 @@
-from dagster import asset, FreshnessPolicy, AssetIn, DynamicPartitionsDefinition, MetadataValue
+from dagster import (
+    asset,
+    FreshnessPolicy,
+    AssetIn,
+    DynamicPartitionsDefinition,
+    MetadataValue,
+    AutoMaterializePolicy,
+    AssetExecutionContext,
+    AssetCheckResult,
+    asset_check
+)
 import pandas as pd
+
+from hooli_data_eng.assets.dbt_assets import allow_outdated_parents_policy
 
 # These assets take data from a SQL table managed by 
 # dbt and create summaries using pandas 
@@ -7,25 +19,36 @@ import pandas as pd
 # and an associated reconciliation sensor
 @asset(
     key_prefix="MARKETING", 
-    freshness_policy=FreshnessPolicy(maximum_lag_minutes=240), 
+    freshness_policy=FreshnessPolicy(maximum_lag_minutes=24*60), 
+    auto_materialize_policy=allow_outdated_parents_policy,
     compute_kind="pandas",
-    op_tags={"owner": "bi@hooli.com"}
+    owners=["team:programmers", "lopp@dagsterlabs.com"],
+    ins={"company_perf": AssetIn(key_prefix=["ANALYTICS"])}
 )
-def avg_order(company_perf: pd.DataFrame) -> pd.DataFrame:
+def avg_orders(context: AssetExecutionContext, company_perf: pd.DataFrame) -> pd.DataFrame:
     """ Computes avg order KPI, must be updated regularly for exec dashboard """
 
     return pd.DataFrame({
         "avg_order": company_perf['total_revenue'] / company_perf['n_orders'] 
     })
 
+@asset_check(
+        description="check that avg orders are expected",
+        asset=avg_orders
+)
+def check_avg_orders(context, avg_orders: pd.DataFrame):
+    avg = avg_orders['avg_order'][0]
+    return AssetCheckResult(
+        passed= True if (avg < 50) else False, 
+        metadata={"actual average": avg, "threshold": 50}
+    )
 
 @asset(
     key_prefix="MARKETING", 
-    freshness_policy=FreshnessPolicy(maximum_lag_minutes=240), 
+    freshness_policy=FreshnessPolicy(maximum_lag_minutes=24*60), 
     compute_kind="snowflake", 
-    metadata={
-        "owner": "bi@hooli.com"
-    }
+    owners=["team:programmers"],
+    ins={"company_perf": AssetIn(key_prefix=["ANALYTICS"])}
 )
 def min_order(context, company_perf: pd.DataFrame) -> pd.DataFrame:
     """ Computes min order KPI """
